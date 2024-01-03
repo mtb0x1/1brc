@@ -6,7 +6,7 @@ use std::{
     env::args_os,
     fs::File,
     io::{stdout, Write as _},
-    path::Path, sync::{Arc, Mutex},
+    path::Path,
 };
 
 use ahash::HashMapExt;
@@ -14,7 +14,7 @@ use fixed::types::I48F16;
 use memmap2::Mmap;
 use mimalloc::MiMalloc;
 use rayon::{
-    iter::{ParallelIterator, IntoParallelRefIterator},
+    iter::ParallelIterator,
     slice::{ParallelSlice, ParallelSliceMut},
 };
 
@@ -138,17 +138,9 @@ fn main() {
         });
 
     let mut sorted_data: Vec<(&[u8], &Record)> =
-        data.par_iter().map(|(&city, record)| (city, record)).collect();
+        data.iter().map(|(&city, record)| (city, record)).collect();
 
-    // Use Rayon to parallelize the sorting in chunks.
-    // TODO : adjust the Chunk size depending on the target.
-    const CHUNK_SIZE: usize = 1000000; 
-    sorted_data.par_chunks_mut(CHUNK_SIZE).for_each(|chunk| {
-        chunk.par_sort_unstable_by_key(|&(city, _)| city);
-    });
-
-    // Merge the sorted chunks.
-    sorted_data.sort_unstable_by_key(|&(city, _)| city);
+    sorted_data.par_sort_unstable_by_key(|&(city, _)| city);
 
     let est_record_size =
         20 // city name
@@ -162,27 +154,16 @@ fn main() {
 
     out.push(b'{');
 
-    let out =  Arc::new(Mutex::new(out));
+    let mut sorted_data_iter = sorted_data.iter();
 
-    // Parallelize writing to output
-    sorted_data.par_chunks(CHUNK_SIZE).for_each(|chunk| {
-        let mut local_out = Vec::with_capacity(chunk.len() * est_record_size);
+    if let Some(&(city, record)) = sorted_data_iter.next() {
+        write_pair(city, record, &mut out);
+        sorted_data_iter.for_each(|&(city, record)| {
+            out.extend_from_slice(b", ");
+            write_pair(city, record, &mut out)
+        });
+    }
 
-        if let Some(&(city, record)) = chunk.first() {
-            write_pair(city, record, &mut local_out);
-            chunk.iter().skip(1).for_each(|&(city, record)| {
-                local_out.extend_from_slice(b", ");
-                write_pair(city, record, &mut local_out)
-            });
-        }
-
-        // Extend the global output buffer in a synchronized way
-        // Lock the mutex to safely extend the global output buffer
-        let mut out = out.lock().unwrap();
-        out.extend(local_out);
-    });
-
-    let mut out = out.lock().unwrap();
     out.extend_from_slice(b"}\n");
 
     stdout()
