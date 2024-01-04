@@ -1,8 +1,17 @@
 #!/bin/bash
 
 output_file="measurement_data.txt"
-total_lines=1000000000
-num_processes=10  # Adjust this based on your system's capabilities
+# Check if the total_lines argument is provided
+if [ "$#" -eq 0 ]; then
+  # If not provided, set default value
+  total_lines=1000000000
+else
+  # If provided, use the provided value
+  total_lines="$1"
+  output_file="measurement_data_$1.txt"
+fi
+
+num_processes=2  # Adjust this based on your system's capabilities
 
 generate_measurement() {
     printf "%.1f" $(awk -v min=0 -v max=40 'BEGIN{srand(); print min+rand()*(max-min)}')

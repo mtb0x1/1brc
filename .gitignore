@@ -1,3 +1,4 @@
-measurement_data.txt
+measurement_data*.txt
+benchmark*.json
 target/
 Cargo.lock

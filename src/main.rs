@@ -9,14 +9,16 @@ use std::{
     path::Path, sync::{Arc, Mutex},
 };
 
-use ahash::HashMapExt;
 use fixed::types::I48F16;
+use fxhash::FxHashMap;
 use memmap2::Mmap;
 use mimalloc::MiMalloc;
 use rayon::{
     iter::{ParallelIterator, IntoParallelRefIterator},
     slice::{ParallelSlice, ParallelSliceMut},
 };
+
+use std::hash::{Hash, Hasher};
 
 type Value = I48F16;
 
@@ -68,6 +70,7 @@ impl Record {
     }
 }
 
+#[inline(always)]
 fn fast_parse(input: &[u8]) -> Value {
     let neg = input[0] == b'-';
     let len = input.len();
@@ -114,7 +117,7 @@ fn main() {
             (city, sample)
         })
         .fold(
-            || ahash::HashMap::with_capacity(1000),
+            || fxhash::FxHashMap::with_capacity_and_hasher(1000, Default::default()),
             |mut map, (city, sample)| {
                 match map.entry(city) {
                     Entry::Vacant(slot) => {
@@ -125,7 +128,7 @@ fn main() {
                 map
             },
         )
-        .reduce(ahash::HashMap::new, |mut map1, map2| {
+        .reduce(FxHashMap::default, |mut map1, map2| {
             map2.iter()
                 .for_each(|(city, record2)| match map1.entry(city) {
                     Entry::Vacant(slot) => {

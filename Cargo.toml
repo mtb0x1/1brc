@@ -7,7 +7,25 @@ edition = "2021"
 
 [dependencies]
 ahash = "0.8.7"
+fxhash = "0.2.1"
 fixed = "1.24.0"
 memmap2 = "0.9.3"
 mimalloc = "0.1.39"
 rayon = "1.8.0"
+
+[[bin]]
+name = "1brc"
+path = "src/main.rs"
+
+[[bin]]
+name = "Lucretiel_1brc"
+path = "src/Lucretiel.rs"
+
+[profile.release]
+opt-level = 3
+debug = false
+panic = "abort"
+debug-assertions = false
+overflow-checks = false
+lto = true
+incremental = false
