@@ -12,6 +12,8 @@ fixed = "1.24.0"
 memmap2 = "0.9.3"
 mimalloc = "0.1.39"
 rayon = "1.8.0"
+lazy_static = "1.4"
+num_cpus = "1.16.0"
 
 [[bin]]
 name = "1brc"

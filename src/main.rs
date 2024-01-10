@@ -6,7 +6,8 @@ use std::{
     env::args_os,
     fs::File,
     io::{stdout, Write as _},
-    path::Path, sync::{Arc, Mutex},
+    path::Path,
+    sync::{Arc, Mutex},
 };
 
 use fixed::types::I48F16;
@@ -14,11 +15,12 @@ use fxhash::FxHashMap;
 use memmap2::Mmap;
 use mimalloc::MiMalloc;
 use rayon::{
-    iter::{ParallelIterator, IntoParallelRefIterator},
+    iter::{IntoParallelRefIterator, ParallelIterator, FromParallelIterator},
     slice::{ParallelSlice, ParallelSliceMut},
 };
 
-use std::hash::{Hash, Hasher};
+use lazy_static::lazy_static;
+use std::borrow::Cow;
 
 type Value = I48F16;
 
@@ -89,11 +91,37 @@ fn fast_parse(input: &[u8]) -> Value {
     Value::from_num(int) / Value::from_num(10)
 }
 
+#[inline(always)]
+/// experimental and cost more than fast_parse (hashing+lookup cost > than trick above)
+fn lookup_temp(input: &[u8]) -> Value {
+    //get values from hashmap instead of parsing them.
+    //println!("getting value {:?}", std::str::from_utf8(input));
+    let key = Cow::Borrowed(input);
+    *TEMPURATURE_HASHMAP.get(&key).unwrap()
+}
+
 fn write_pair(city: &[u8], record: &Record, out: &mut Vec<u8>) {
     out.extend_from_slice(city);
     out.push(b'=');
     record.write(out);
 }
+
+//store possible temp values -100.9 => 100.9
+lazy_static! {
+    static ref TEMPURATURE_HASHMAP: FxHashMap<Cow<'static, [u8]>, Value> = {
+        let mut hashmap = FxHashMap::with_capacity_and_hasher(100*10*2+10,Default::default());
+
+        // Populate the hashmap with keys and values
+        for i in (-1009..=1009).step_by(1) {
+            let value = i as f64 / 10.0;
+            let key_str = format!("{:.1}", value);
+            let key_bytes = key_str.as_bytes().to_vec(); // Convert to owned Vec<u8>
+            let key_cow: Cow<'static, [u8]> = Cow::Owned(key_bytes);
+            hashmap.insert(key_cow, Value::from_num(value));
+        }
+        hashmap
+    };
+} 
 
 fn main() {
     // Simple mega parallel rayon solution
@@ -140,13 +168,12 @@ fn main() {
             map1
         });
 
-    let mut sorted_data: Vec<(&[u8], &Record)> =
-        data.par_iter().map(|(&city, record)| (city, record)).collect();
+    let mut sorted_data: Vec<(&&[u8], &Record)> = Vec::from_par_iter(data.par_iter());
 
     // Use Rayon to parallelize the sorting in chunks.
     // TODO : adjust the Chunk size depending on the target.
-    const CHUNK_SIZE: usize = 1000000; 
-    sorted_data.par_chunks_mut(CHUNK_SIZE).for_each(|chunk| {
+    let chunk_size: usize = 1_000_000_000/ num_cpus::get() ;
+    sorted_data.par_chunks_mut(chunk_size).for_each(|chunk| {
         chunk.par_sort_unstable_by_key(|&(city, _)| city);
     });
 
@@ -165,10 +192,10 @@ fn main() {
 
     out.push(b'{');
 
-    let out =  Arc::new(Mutex::new(out));
+    let out = Arc::new(Mutex::new(out));
 
     // Parallelize writing to output
-    sorted_data.par_chunks(CHUNK_SIZE).for_each(|chunk| {
+    sorted_data.par_chunks(chunk_size).for_each(|chunk| {
         let mut local_out = Vec::with_capacity(chunk.len() * est_record_size);
 
         if let Some(&(city, record)) = chunk.first() {
